@@ -10,6 +10,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using NXOpen.CAM;
+using NXOpen.UF;
 using NXOpen.Utilities;
 
 
@@ -31,6 +32,8 @@ namespace WorkpieceMeasurement
         private NXOpen.BlockStyler.Group _group01;// Block type: Group
         private NXOpen.BlockStyler.SelectObject _workpiece;// Block type: Selection
         private NXOpen.BlockStyler.SelectObject _baseplate;// Block type: Selection
+        private NXOpen.BlockStyler.Group _group03;// Block type: Group
+        private NXOpen.BlockStyler.SpecifyCSYS _csys;// Block type: Specify Csys
         private WorkpieceOptions _workpieceOptions;
 
         //------------------------------------------------------------------------------
@@ -46,6 +49,7 @@ namespace WorkpieceMeasurement
                 _theUi = UI.GetUI();
                 string theDlxFileName = "WorkpieceMeasurement.dlx";
                 _theDialog = _theUi.CreateDialog(theDlxFileName);
+                
                 _theDialog.AddOkHandler(new NXOpen.BlockStyler.BlockDialog.Ok(ok_cb));
                 _theDialog.AddUpdateHandler(new NXOpen.BlockStyler.BlockDialog.Update(update_cb));
                 _theDialog.AddInitializeHandler(new NXOpen.BlockStyler.BlockDialog.Initialize(initialize_cb));
@@ -67,6 +71,7 @@ namespace WorkpieceMeasurement
 
             var workPart = _theSession.Parts.Work;
             var setup = workPart.CAMSetup;
+            //var test = setup.CAMOperationCollection;
             var camGroupCollection = setup.CAMGroupCollection;
 
             foreach (var camGroup in camGroupCollection)
@@ -180,6 +185,8 @@ namespace WorkpieceMeasurement
                 _zeroOffset.Value = false;
                 _baseplate = (NXOpen.BlockStyler.SelectObject)_theDialog.TopBlock.FindBlock("_baseplate");
                 _workpiece = (NXOpen.BlockStyler.SelectObject)_theDialog.TopBlock.FindBlock("_workpiece");
+                _group03 = (NXOpen.BlockStyler.Group)_theDialog.TopBlock.FindBlock("_group03");
+                _csys = (NXOpen.BlockStyler.SpecifyCSYS)_theDialog.TopBlock.FindBlock("_csys");
                 InitializeNcProgramListBox();
             }
             catch (Exception ex)
@@ -246,6 +253,7 @@ namespace WorkpieceMeasurement
             {
                 //PrintBoundingBoxValues(GetBoundingBoxValues());
                 CreateProgramUde();
+                
             }
             catch (Exception ex)
             {
@@ -276,6 +284,144 @@ namespace WorkpieceMeasurement
 
         public double[] GetBoundingBoxValues()
         {
+            var workPart = _theSession.Parts.Work;
+
+            var csys = workPart.CoordinateSystems;
+
+            var rt = workPart.CAMSetup.CAMOperationCollection;
+
+            
+            var a =rt.FindObject("Test2");
+            var path = a.GetPath();
+            List<double> zccord = new List<double>();
+            for (int j = 1; j < path.NumberOfToolpathEvents + 1; j++)    /* The Path Index must be Start at 1 */
+                    {
+                        CamPathToolpathEventType camPathToolpathEventType = path.GetToolpathEventType(j);
+                        CamPathMotionType camPathMotionType = default(CamPathMotionType);
+                        CamPathMotionShapeType camPathMotionShapeType = default(CamPathMotionShapeType);
+
+                        switch (camPathToolpathEventType)
+                        {
+                            case CamPathToolpathEventType.Motion:
+                                path.IsToolpathEventAMotion(j, out camPathMotionType, out camPathMotionShapeType);
+                                Guide.InfoWriteLine(j.ToString() + ". Path Motion Type : " + camPathMotionType + " --> Shape Type : " + camPathMotionShapeType);
+
+                                switch (camPathMotionType)
+                                {
+                                    case CamPathMotionType.From:
+                                    case CamPathMotionType.Rapid:
+                                    case CamPathMotionType.Approach:
+                                    case CamPathMotionType.Engage:
+                                    case CamPathMotionType.FirstCut:
+                                    case CamPathMotionType.Cut:
+                                    case CamPathMotionType.SideCut:
+                                    case CamPathMotionType.Stepover:
+                                    case CamPathMotionType.InternalLift:
+                                    case CamPathMotionType.Retract:
+                                    case CamPathMotionType.Traversal:
+                                    case CamPathMotionType.Gohome:
+                                    case CamPathMotionType.Return:
+                                    case CamPathMotionType.Departure:
+                                    case CamPathMotionType.Cycle:
+                                    case CamPathMotionType.Undefined:
+
+                                        switch (camPathMotionShapeType)
+                                        {
+                                            case CamPathMotionShapeType.Linear:
+                                                PathLinearMotion pathLinearMotion = path.GetLinearMotion(j);
+                                                DisplayMotionInformation(pathLinearMotion);
+                                        zccord.Add(pathLinearMotion.EndPoint.Z);
+                                                break;
+
+                                            case CamPathMotionShapeType.Circular:
+                                                PathCircularMotion pathCircularMotion = path.GetCircularMotion(j);
+                                                DisplayCircularMotionInformation(pathCircularMotion);
+                                                break;
+
+                                            case CamPathMotionShapeType.Helical:
+                                                PathHelixMotion pathHelixMotion = path.GetHelixMotion(j);
+                                                DisplayHelicalMotionInformation(pathHelixMotion);
+                                                break;
+
+                                            case CamPathMotionShapeType.Nurbs:
+                                                Guide.InfoWriteLine("Nurbs Motion Shape.");
+                                                break;
+
+                                            case CamPathMotionShapeType.Undefined:
+                                                Guide.InfoWriteLine("Motion Shape Undefined.");
+                                                break;
+
+                                            default:
+                                                Guide.InfoWriteLine("Unknown Motion Shape.");
+                                                break;
+                                        } /* switch camPathMotionShapeType */
+                                        break;
+
+                                    default:
+                                        break;
+                                } /* switch camPathMotionType */
+                                break;
+
+                            case CamPathToolpathEventType.LevelMarker:
+                                PathLevelMarker pathLevelMarker = path.GetLevelMarker(j);
+                                double levelDepth = pathLevelMarker.LevelDepth;
+                                Vector3d vector3d = pathLevelMarker.LevelNormal;
+                                Guide.InfoWriteLine(j.ToString() + ".Level Marker Depth : " + levelDepth + " Normal X" + vector3d.X + " Y" + vector3d.Y + " Z" + vector3d.Z + "\n\n");
+
+                                break;
+
+                            case CamPathToolpathEventType.System:
+                                Guide.InfoWriteLine(j.ToString() + ". System Tool Path Event Type\n\n");
+                                break;
+
+                            case CamPathToolpathEventType.Ude:
+                                Ude ude = path.GetUde(j);
+                                DisplayUdeInformation(ude, j);
+                                break;
+
+                            default:
+                                Guide.InfoWriteLine("Unknown ToolPath Event Type.");
+                                break;
+                        } /* switch camPathToolpathEventType */
+                    } /* for int j = 1 */
+            zccord.Sort();
+        Guide.InfoWriteLine("Tuta "+zccord[1].ToString());
+
+
+
+
+            Guide.InfoWriteLine("Bin da ");
+
+
+            foreach (var cs in csys)
+            {
+                Guide.InfoWriteLine(cs.ToString());
+            }
+
+            var t = csys.ToArray();
+
+            for (int i = 0; i < t.Length; i++)
+            {
+                Guide.InfoWriteLine("----------------------------------------");
+                Guide.InfoWriteLine(t[i].JournalIdentifier);
+                Guide.InfoWriteLine(t[i].Name);
+                Guide.InfoWriteLine(t[i].ToString());
+                Guide.InfoWriteLine(t[i].OwningPart.Name);
+                Guide.InfoWriteLine(t[i].OwningPart.JournalIdentifier);
+                Guide.InfoWriteLine(t[i].GetType().ToString());
+                Guide.InfoWriteLine(t[i].Orientation.JournalIdentifier);
+                Guide.InfoWriteLine(t[i].Orientation.Name);
+                Guide.InfoWriteLine(t[i].Tag.ToString());
+                //Guide.InfoWriteLine(t[0].Prototype.Name);
+                Guide.InfoWriteLine(t[i].Origin.X.ToString());
+                Guide.InfoWriteLine(t[i].Origin.Y.ToString());
+                Guide.InfoWriteLine(t[i].Origin.Z.ToString());
+                Guide.InfoWriteLine("----------------------------------------");
+
+            }
+            
+
+
             //BoundingBox dimensions {X,Y,Z}
             double[] boundingBoxValues = { 0, 0, 0 };
 
@@ -302,6 +448,7 @@ namespace WorkpieceMeasurement
                     distancesBasePlate);
             }
 
+            
             if (bodyWorkpiece != null)
             {
                 _theUfSession.Modl.AskBoundingBoxExact(bodyWorkpiece.Tag, 0, minCornerWorkpiece, directionsWorkpiece,
@@ -419,6 +566,125 @@ namespace WorkpieceMeasurement
         public void GetMom()
         {
             
+        }
+
+        static void DisplayUdeInformation(Ude ude, int count)
+        {
+            string udeName = ude.UdeName;
+            int numberOfparameters = ude.NumberOfParameters;
+
+            Guide.InfoWriteLine(count.ToString() + ". Ude Name : " + udeName + " Number of Parameters : " + numberOfparameters);
+        }
+
+        //------------------------------------------------------------------------------
+        //             Method : DisplayHelicalMotionInformation
+        //
+        //  Display Helical Motion Information
+        //
+        //  Input PathHelixMotion : The Helical Path Motion to Query
+        //  Return                : None
+        //------------------------------------------------------------------------------
+        static void DisplayHelicalMotionInformation(PathHelixMotion pathHelixMotion)
+        {
+            Point3d arcCenter = pathHelixMotion.ArcCenter;
+            Point3d endPoint = pathHelixMotion.EndPoint;
+
+            double feedValue = 0.0;
+            double arcRadius = pathHelixMotion.ArcRadius;
+            double numberOfRevolutions = pathHelixMotion.NumberOfRevolutions;
+
+            CamPathDir camPathDir = pathHelixMotion.Direction;
+            CamPathFeedUnitType camPathFeedUnitType;
+
+            Vector3d vector3d = pathHelixMotion.ToolAxis;
+
+            pathHelixMotion.GetFeedrate(out feedValue, out camPathFeedUnitType);
+
+            Guide.InfoWriteLine("\tCircular Motion End Point : X" + endPoint.X + " Y" + endPoint.Y + " Z" + endPoint.Z);
+            Guide.InfoWriteLine("\tCenter      : X" + arcCenter.X + " Y" + arcCenter.Y + " Z" + arcCenter.Z);
+            Guide.InfoWriteLine("\tRadius      : " + arcRadius + " --> Direction : " + camPathDir + " --> Number of Revolutions : " + numberOfRevolutions);
+            Guide.InfoWriteLine("\tTool Axis   : X" + vector3d.X + " Y" + vector3d.Y + " Z" + vector3d.Z);
+            Guide.InfoWriteLine("\tMotion Type : " + pathHelixMotion.MotionType);
+            Guide.InfoWriteLine("\tFeedRate    : " + feedValue + " --> Unit : " + camPathFeedUnitType + "\n\n");
+        }
+
+        //------------------------------------------------------------------------------
+        //             Method : DisplayCircularMotionInformation
+        //
+        //  Display Circular Motion Information
+        //
+        //  Input PathCircularMotion : The Circular Path Motion to Query
+        //  Return                   : None
+        //------------------------------------------------------------------------------
+        static void DisplayCircularMotionInformation(PathCircularMotion pathCircularMotion)
+        {
+            double feedValue = 0.0;
+            double arcRadius = pathCircularMotion.ArcRadius;
+
+            Point3d arcCenter = pathCircularMotion.ArcCenter;
+            Point3d endPoint = pathCircularMotion.EndPoint;
+
+            CamPathDir camPathDir = pathCircularMotion.Direction;
+            CamPathFeedUnitType camPathFeedUnitType;
+
+            Vector3d vector3d = pathCircularMotion.ToolAxis;
+
+            pathCircularMotion.GetFeedrate(out feedValue, out camPathFeedUnitType);
+
+            Guide.InfoWriteLine("\tCircular Motion End Point : X" + endPoint.X + " Y" + endPoint.Y + " Z" + endPoint.Z);
+            Guide.InfoWriteLine("\tCenter      : X" + arcCenter.X + " Y" + arcCenter.Y + " Z" + arcCenter.Z);
+            Guide.InfoWriteLine("\tRadius      : " + arcRadius + " --> Direction : " + camPathDir);
+            Guide.InfoWriteLine("\tTool Axis   : X" + vector3d.X + " Y" + vector3d.Y + " Z" + vector3d.Z);
+            Guide.InfoWriteLine("\tMotion Type : " + pathCircularMotion.MotionType);
+            Guide.InfoWriteLine("\tFeedRate    : " + feedValue + " --> Unit : " + camPathFeedUnitType + "\n\n");
+        }
+
+        //------------------------------------------------------------------------------
+        //             Method : DisplayMotionInformation
+        //
+        //  Display Linear Motion Information
+        //
+        //  Input PathLinearMotion : The Linear Path Motion to Query
+        //  Return                 : None
+        //------------------------------------------------------------------------------
+        static void DisplayMotionInformation(PathLinearMotion pathLinearMotion)
+        {
+            double feedValue = 0.0;
+            CamPathFeedUnitType camPathFeedUnitType;
+
+            Vector3d vector3d = pathLinearMotion.ToolAxis;
+            Point3d endPoint = pathLinearMotion.EndPoint;
+
+            pathLinearMotion.GetFeedrate(out feedValue, out camPathFeedUnitType);
+            Guide.InfoWriteLine("\tLinear Motion End Point : X" + endPoint.X + " Y" + endPoint.Y + " Z" + endPoint.Z);
+            Guide.InfoWriteLine("\tTool Axis   : X" + vector3d.X + " Y" + vector3d.Y + " Z" + vector3d.Z);
+            Guide.InfoWriteLine("\tMotion Type : " + pathLinearMotion.MotionType);
+            Guide.InfoWriteLine("\tFeedRate    : " + feedValue + " --> Unit : " + camPathFeedUnitType + "\n\n");
+        }
+
+        //------------------------------------------------------------------------------
+        //             Method : SystemInfo
+        //
+        //  Display System Information
+        //
+        //  Input UFPart : The UF Part
+        //  Input Part   : The Work Part
+        //  Return       : None
+        //------------------------------------------------------------------------------
+        static void SystemInfo(UFPart uFPart, Part workPart)
+        {
+            SystemInfo sysInfo;
+            _theUfSession.UF.AskSystemInfo(out sysInfo);
+
+            string partName = string.Empty;
+            uFPart.AskPartName(workPart.Tag, out partName);
+
+            Guide.InfoWriteLine("============================================================");
+            Guide.InfoWriteLine("Information Listing Created by : " + sysInfo.user_name.ToString());
+            Guide.InfoWriteLine("Date                           : " + sysInfo.date_buf.ToString());
+            Guide.InfoWriteLine("Current Work Part              : " + partName);
+            Guide.InfoWriteLine("Node Name                      : " + sysInfo.node_name.ToString());
+            Guide.InfoWriteLine("============================================================\n\n");
         }
 
     }

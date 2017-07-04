@@ -6,36 +6,38 @@ using System.Threading.Tasks;
 
 namespace WorkpieceMeasurement
 {
-    public class WorkpieceOptions : IDisposable
+    /// <summary>
+    /// Singleton Pattern for WorkpieceObject Measurement Data
+    /// </summary>
+    public class WorkpieceObject : IDisposable
     {
         #region Constructor
-        private static WorkpieceOptions _instance;
+        private static WorkpieceObject _instance;
         private static readonly object SyncRoot = new Object();
-        public static WorkpieceOptions GetInstance()
+        public static WorkpieceObject GetInstance()
         {
             if (_instance == null)
             {
                 lock (SyncRoot)
                 {
                     if (_instance == null) //-V3054
-                        _instance = new WorkpieceOptions();
+                        _instance = new WorkpieceObject();
                 }
-
             }
             return _instance;
         }
-        private WorkpieceOptions()
+        private WorkpieceObject()
         {
+            // Initialize Data
             NcPrograms = new List<string>();
             SelectedNcProgram = null;
-            IsZeroOffset = false;
+            SelectedCamOperation = null;
             WorkpieceMeasurement = new double[] { 0, 0, 0 };
             ZeroOffset = new double[] { 0, 0, 0 };
-
         }
         #endregion
         #region Destructor
-        ~WorkpieceOptions()
+        ~WorkpieceObject()
         {
             Dispose(true);
         }
@@ -47,31 +49,27 @@ namespace WorkpieceMeasurement
             {
                 NcPrograms = null;
                 SelectedNcProgram = null;
-                IsZeroOffset = false;
                 WorkpieceMeasurement = null;
+                SelectedCamOperation = null;
                 ZeroOffset = null;
             }
             ReleaseUnmanagedResources();
         }
         public void Dispose()
         {
-            Dispose(true);
-           
+            Dispose(true); 
         }
         private void ReleaseUnmanagedResources()
         {
             GC.SuppressFinalize(this);
         }
         #endregion
-
+        #region Data
         public List<string> NcPrograms { get; set; }
         public string SelectedNcProgram { get; set; }
-        public bool IsZeroOffset { get; set; }
+        public string SelectedCamOperation { get; set; }
         public double[] WorkpieceMeasurement { get; set; }
         public double[] ZeroOffset { get; set; }
-
-
-
-
+        #endregion
     }
 }
